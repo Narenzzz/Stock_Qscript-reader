@@ -204,12 +204,26 @@ if len(contents_payload) > 1 and doc_summary_labels:
                 if custom_focus.strip():
                     contents_payload.append(f"\nADDITIONAL SPECIFIC INVESTOR QUESTION TO ANSWER:\n{custom_focus}")
                 
-                # Standard text-based generation call (100% stable across all SDK versions)
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=contents_payload,
-                    config=types.GenerateContentConfig(temperature=0.1)
-                )
+                # Automated fallback list across stable modern versions to prevent 503 errors
+                models_to_try = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash"]
+                response = None
+                last_error = None
+                
+                for model_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=contents_payload,
+                            config=types.GenerateContentConfig(temperature=0.1)
+                        )
+                        if response and response.text:
+                            break
+                    except Exception as model_err:
+                        last_error = model_err
+                        continue
+                
+                if not response or not response.text:
+                    raise Exception(f"All model endpoints busy or unavailable. Last error: {last_error}")
                 
                 full_report = response.text
                 st.success(f"Successfully Analyzed: {', '.join(doc_summary_labels)}")
