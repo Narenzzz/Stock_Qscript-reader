@@ -26,7 +26,7 @@ if not api_key:
 
 # --- PROMPT 1: SINGLE QUARTER DEEP-DIVE ---
 SINGLE_QUARTER_PROMPT = """
-You are a ruthless, Warren Buffett & Charlie Munger-style fundamental value investor analyzing an Indian listed company's quarterly Investor Presentation (PPT) and Earnings Concall Transcript.
+You are a ruthless, Warren Buffett & Charlie Munger-style fundamental value investor analyzing an Indian listed company's quarterly Earnings Concall Transcript and Investor Presentation.
 Ignore corporate PR fluff, fancy graphics, and macro excuses. Extract ONLY hard numbers, structural business updates, and high-signal insights.
 
 Format your output strictly using the following 5 Markdown sections separated by exact horizontal rules (---):
@@ -213,14 +213,25 @@ if source_mode == "Auto-Fetch by Ticker":
                 if st.button("🚀 Generate Single-Quarter Value Brief", type="primary", use_container_width=True):
                     contents_payload.append(SINGLE_QUARTER_PROMPT)
                     with st.spinner(f"Downloading filings for {ticker} ({selected_q['quarter']})..."):
-                        for doc_type, link in selected_q["links"].items():
-                            raw_bytes = download_pdf_bytes(link)
+                        # Robust payload optimization: Prioritize Transcript first to avoid payload size timeouts
+                        links_to_fetch = selected_q["links"]
+                        if "Transcript" in links_to_fetch:
+                            # Fetch transcript first for highest signal-to-noise ratio
+                            t_link = links_to_fetch["Transcript"]
+                            raw_bytes = download_pdf_bytes(t_link)
                             if raw_bytes:
-                                contents_payload.append(f"DOCUMENT: {doc_type} for {selected_q['quarter']}")
+                                contents_payload.append(f"DOCUMENT TYPE: Transcript for {selected_q['quarter']}")
                                 contents_payload.append(types.Part.from_bytes(data=raw_bytes, mime_type="application/pdf"))
-                                doc_summary_labels.append(f"{doc_type} ({selected_q['quarter']})")
-                            else:
-                                st.error(f"Exchange firewall blocked direct download of {doc_type} ({selected_q['quarter']}). Download via the [Direct Link]({link}) and use Upload mode.")
+                                doc_summary_labels.append(f"Transcript ({selected_q['quarter']})")
+                        
+                        # Fetch PPT if available and payload space permits
+                        if "PPT" in links_to_fetch:
+                            p_link = links_to_fetch["PPT"]
+                            raw_bytes = download_pdf_bytes(p_link)
+                            if raw_bytes:
+                                contents_payload.append(f"DOCUMENT TYPE: PPT Presentation for {selected_q['quarter']}")
+                                contents_payload.append(types.Part.from_bytes(data=raw_bytes, mime_type="application/pdf"))
+                                doc_summary_labels.append(f"PPT ({selected_q['quarter']})")
 
             else:
                 col1, col2 = st.columns(2)
@@ -253,27 +264,21 @@ if source_mode == "Auto-Fetch by Ticker":
                 if st.button("⚖️ Run Multi-Quarter 'Say-Do' Management Audit", type="primary", use_container_width=True):
                     contents_payload.append(SAY_DO_AUDIT_PROMPT)
                     with st.spinner(f"Downloading filings for {past_q['quarter']} and {latest_q['quarter']}..."):
-                        for doc_type, link in past_q["links"].items():
-                            raw_bytes = download_pdf_bytes(link)
+                        # Load Earlier Quarter Transcript primarily
+                        if "Transcript" in past_q["links"]:
+                            raw_bytes = download_pdf_bytes(past_q["links"]["Transcript"])
                             if raw_bytes:
-                                contents_payload.append(
-                                    f"EARLIER BASELINE QUARTER ({past_q['quarter']}) - {doc_type}:"
-                                )
+                                contents_payload.append(f"EARLIER BASELINE QUARTER ({past_q['quarter']}) - Transcript:")
                                 contents_payload.append(types.Part.from_bytes(data=raw_bytes, mime_type="application/pdf"))
-                                doc_summary_labels.append(f"{doc_type} ({past_q['quarter']})")
-                            else:
-                                st.error(f"Blocked download for {doc_type} ({past_q['quarter']}).")
+                                doc_summary_labels.append(f"Earlier Transcript ({past_q['quarter']})")
                         
-                        for doc_type, link in latest_q["links"].items():
-                            raw_bytes = download_pdf_bytes(link)
+                        # Load Later Quarter Transcript primarily
+                        if "Transcript" in latest_q["links"]:
+                            raw_bytes = download_pdf_bytes(latest_q["links"]["Transcript"])
                             if raw_bytes:
-                                contents_payload.append(
-                                    f"LATER DELIVERY QUARTER ({latest_q['quarter']}) - {doc_type}:"
-                                )
+                                contents_payload.append(f"LATER DELIVERY QUARTER ({latest_q['quarter']}) - Transcript:")
                                 contents_payload.append(types.Part.from_bytes(data=raw_bytes, mime_type="application/pdf"))
-                                doc_summary_labels.append(f"{doc_type} ({latest_q['quarter']})")
-                            else:
-                                st.error(f"Blocked download for {doc_type} ({latest_q['quarter']}).")
+                                doc_summary_labels.append(f"Later Transcript ({latest_q['quarter']})")
 
 # --- SOURCE MODE 2: MANUAL UPLOAD ---
 else:
@@ -322,14 +327,13 @@ if len(contents_payload) > 1 and doc_summary_labels:
         st.error("Please add `GEMINI_API_KEY` to your Streamlit Secrets or enter it in the sidebar.")
     else:
         with st.spinner(f"Reading & cross-examining {len(doc_summary_labels)} filing(s): {', '.join(doc_summary_labels)}..."):
-            # Explicitly initialize the client with the api_key variable
             client = genai.Client(api_key=api_key)
             
             if custom_focus.strip():
                 contents_payload.append(f"\nADDITIONAL SPECIFIC INVESTOR QUESTION TO ANSWER:\n{custom_focus}")
                 
             response = client.models.generate_content(
-                model="gemini-flash-latest",  # Updated to stable gemini-flash-latest model
+                model="gemini-2.0-flash",
                 contents=contents_payload,
                 config=types.GenerateContentConfig(temperature=0.1)
             )
