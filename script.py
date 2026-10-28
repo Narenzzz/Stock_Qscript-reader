@@ -329,7 +329,7 @@ if len(contents_payload) > 1 and doc_summary_labels:
                 contents_payload.append(f"\nADDITIONAL SPECIFIC INVESTOR QUESTION TO ANSWER:\n{custom_focus}")
                 
             response = client.models.generate_content(
-                model="gemini-2.0-flash",  # Updated to stable gemini-2.0-flash model
+                model="gemini-3.5-flash",  # Updated to stable gemini-3.5-flash model
                 contents=contents_payload,
                 config=types.GenerateContentConfig(temperature=0.1)
             )
