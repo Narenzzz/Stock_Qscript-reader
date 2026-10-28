@@ -206,7 +206,7 @@ if len(contents_payload) > 1 and doc_summary_labels:
                 
                 # Standard text-based generation call (100% stable across all SDK versions)
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.8-flash",
                     contents=contents_payload,
                     config=types.GenerateContentConfig(temperature=0.1)
                 )
