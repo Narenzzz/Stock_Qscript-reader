@@ -1,5 +1,6 @@
 import streamlit as ui_app
 import os
+import time
 from pypdf import PdfReader
 from google import genai
 from google.genai.errors import APIError
@@ -37,6 +38,29 @@ def extract_text_from_pdf(uploaded_file):
             text_content.append(page_text)
             
     return "\n".join(text_content)
+
+def generate_with_retry(client, model_name, prompt, max_retries=3):
+    """Attempts to generate content, retrying with exponential backoff if a 503 error occurs."""
+    delay = 2  # Starting delay in seconds
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            return response
+        except APIError as api_err:
+            # If it's a 503 server error or high-demand message, retry
+            is_503 = (api_err.code == 503) or ("high demand" in str(api_err).lower())
+            
+            if is_503 and attempt < max_retries - 1:
+                ui_app.warning(f"Gemini is busy (Attempt {attempt + 1}/{max_retries}). Retrying in {delay} seconds...")
+                time.sleep(delay)
+                delay *= 2  # Double the wait time for the next loop
+            else:
+                # Re-raise the error if max retries reached or it's a different error code (like 404 or 400)
+                raise api_err
 
 # File Uploader Widget
 uploaded_file = ui_app.file_uploader(
@@ -77,11 +101,19 @@ if uploaded_file is not None:
                     {transcript_text}
                     """
                     
-                    # 4. Request generation using the updated gemini-3.8-flash model
-                    response = client.models.generate_content(
-                        model='gemini-3.8-flash',
-                        contents=prompt,
-                    )
+                    # 4. Attempt generation using primary flash model with automatic retries
+                    try:
+                        ui_app.info("Sending request to Gemini 3.8 Flash...")
+                        response = generate_with_retry(client, 'gemini-3.8-flash', prompt)
+                    except APIError as api_err:
+                        # Fallback step if the primary model fails all retries due to server capacity limits
+                        is_server_error = (api_err.code == 503) or ("high demand" in str(api_err).lower())
+                        if is_server_error:
+                            ui_app.warning("Gemini 3.8 Flash is completely saturated. Falling back to alternative model tier...")
+                            # Attempt with the robust backup model tier
+                            response = generate_with_retry(client, 'gemini-2.5-pro', prompt)
+                        else:
+                            raise api_err
                     
                     # 5. Output response to the application surface
                     ui_app.markdown("---")
