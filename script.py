@@ -1,83 +1,94 @@
-import streamlit as st
+import streamlit as ui_app
+import os
 from pypdf import PdfReader
 from google import genai
 from google.genai.errors import APIError
 
-# Set up the web page title and layout
-st.set_page_config(page_title="Earnings Call Summarizer", page_icon="📈", layout="centered")
+# Set up the Streamlit page configuration
+ui_app.set_page_config(
+    page_title="Company Con-Call Summarizer",
+    page_icon="📈",
+    layout="wide"
+)
 
-st.title("📈 Company Con-Call Summarizer")
-st.write("Upload a corporate earnings call transcript PDF to get a structured financial summary using Gemini.")
+# App Title & Header
+ui_app.title("📈 Company Con-Call Summarizer")
+ui_app.markdown(
+    "Upload a corporate earnings call transcript PDF to get a structured financial summary using Gemini."
+)
 
-# Sidebar for API key input as a fallback
-st.sidebar.header("Configuration")
-api_key_input = st.sidebar.text_input("Enter Gemini API Key (Optional if set in environment)", type="password")
+# Sidebar Configuration for API Key
+with ui_app.sidebar:
+    ui_app.header("Configuration")
+    user_api_key = ui_app.text_input(
+        "Enter Gemini API Key (Optional if set in environment)",
+        type="password",
+        help="If you leave this blank, the app will look for the GEMINI_API_KEY environment variable."
+    )
 
-# Initialize the Gemini Client
-def get_gemini_client():
-    # Priority 1: Use the sidebar input if provided
-    if api_key_input:
-        return genai.Client(api_key=api_key_input)
+def extract_text_from_pdf(uploaded_file):
+    """Reads an uploaded file object and extracts all text content page by page."""
+    reader = PdfReader(uploaded_file)
+    text_content = []
     
-    # Priority 2: Automatically look for GEMINI_API_KEY env variable
-    try:
-        return genai.Client()
-    except Exception:
-        return None
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text_content.append(page_text)
+            
+    return "\n".join(text_content)
 
-# File uploader widget
-uploaded_file = st.file_uploader("Choose a conference call PDF file", type="pdf")
+# File Uploader Widget
+uploaded_file = ui_app.file_uploader(
+    "Choose a conference call PDF file", 
+    type=["pdf"]
+)
 
 if uploaded_file is not None:
-    st.success("File uploaded successfully!")
+    ui_app.success("File uploaded successfully!")
     
-    # Action button
-    if st.button("Generate Summary", type="primary"):
-        client = get_gemini_client()
-        
-        if client is None:
-            st.error("API Key not found. Please set the GEMINI_API_KEY environment variable or enter it in the sidebar.")
-        else:
-            with st.spinner("Extracting text and analyzing transcript with Gemini..."):
+    # Initialize the Gemini Client
+    # Priorities: 1. Sidebar input key -> 2. Environment variable key
+    api_key_to_use = user_api_key if user_api_key.strip() else os.environ.get("GEMINI_API_KEY")
+    
+    if not api_key_to_use:
+        ui_app.error("API Key Missing! Please enter your Gemini API Key in the sidebar or set it as an environment variable.")
+    else:
+        # Trigger processing when the user clicks the button
+        if ui_app.button("Generate Summary", type="primary"):
+            with ui_app.spinner("Extracting text and analyzing transcript with Gemini..."):
                 try:
-                    # Read the uploaded PDF file
-                    reader = PdfReader(uploaded_file)
-                    text_content = []
-                    for page in reader.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text_content.append(page_text)
+                    # 1. Initialize client with the valid key
+                    client = genai.Client(api_key=api_key_to_use)
                     
-                    full_transcript = "\n".join(text_content)
+                    # 2. Extract raw text from the uploaded PDF data
+                    transcript_text = extract_text_from_pdf(uploaded_file)
                     
-                    if not full_transcript.strip():
-                        st.error("Could not extract text from this PDF. It might be a scanned image or empty.")
-                    else:
-                        # Construct the prompt
-                        prompt = f"""
-                        You are an expert financial analyst. Analyze the following company earnings conference call transcript and provide a structured summary containing:
-                        
-                        1. **Executive Summary**: A high-level overview of the quarter/year performance.
-                        2. **Key Financial Highlights**: Revenue, margins, guidance, and important metrics.
-                        3. **Strategic Initiatives & Operational Updates**: Main updates provided by management.
-                        4. **Q&A Insights**: The most critical questions asked by analysts and how management addressed them (risks, tailwinds, headwinds).
-                        
-                        Transcript content:
-                        {full_transcript}
-                        """
-                        
-                        # Generate the content
-                        response = client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=prompt,
-                        )
-                        
-                        # Display the final summary on the UI
-                        st.markdown("---")
-                        st.subheader("📋 Earnings Call Summary")
-                        st.markdown(response.text)
-                        
+                    # 3. Formulate the financial prompt
+                    prompt = f"""
+                    You are an expert financial analyst. Analyze the following company earnings conference call transcript and provide a structured summary containing:
+                    
+                    1. **Executive Summary**: A high-level overview of the quarter/year performance.
+                    2. **Key Financial Highlights**: Revenue, margins, guidance, and important metrics.
+                    3. **Strategic Initiatives & Operational Updates**: Main updates provided by management.
+                    4. **Q&A Insights**: The most critical questions asked by analysts and how management addressed them (risks, tailwinds, headwinds).
+                    
+                    Transcript content:
+                    {transcript_text}
+                    """
+                    
+                    # 4. Request generation using the updated gemini-3.8-flash model
+                    response = client.models.generate_content(
+                        model='gemini-3.8-flash',
+                        contents=prompt,
+                    )
+                    
+                    # 5. Output response to the application surface
+                    ui_app.markdown("---")
+                    ui_app.subheader("📊 Earnings Call Summary")
+                    ui_app.markdown(response.text)
+                    
                 except APIError as api_err:
-                    st.error(f"Gemini API Error: {api_err}")
+                    ui_app.error(f"Gemini API Error: {api_err}")
                 except Exception as e:
-                    st.error(f"An unexpected error occurred: {e}")
+                    ui_app.error(f"An unexpected error occurred: {e}")
