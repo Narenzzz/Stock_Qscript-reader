@@ -194,10 +194,9 @@ if source_mode == "Auto-Fetch by Ticker":
         else:
             quarter_options = [
                 f"{q['quarter']} ({', '.join(q['links'].keys())})"
-                for q in quarters[:12] # Show up to 12 recent quarters (3 years)
+                for q in quarters[:12]
             ]
             
-            # --- WORKFLOW A: SINGLE QUARTER ---
             if analysis_type == "Single Quarter Deep-Dive":
                 selected_idx = st.selectbox(
                     "Select Quarter to Analyze:",
@@ -223,7 +222,6 @@ if source_mode == "Auto-Fetch by Ticker":
                             else:
                                 st.error(f"Exchange firewall blocked direct download of {doc_type} ({selected_q['quarter']}). Download via the [Direct Link]({link}) and use Upload mode.")
 
-            # --- WORKFLOW B: MULTI-QUARTER SAY-DO AUDIT ---
             else:
                 col1, col2 = st.columns(2)
                 with col1:
@@ -255,7 +253,6 @@ if source_mode == "Auto-Fetch by Ticker":
                 if st.button("⚖️ Run Multi-Quarter 'Say-Do' Management Audit", type="primary", use_container_width=True):
                     contents_payload.append(SAY_DO_AUDIT_PROMPT)
                     with st.spinner(f"Downloading filings for {past_q['quarter']} and {latest_q['quarter']}..."):
-                        # Load Earlier Quarter
                         for doc_type, link in past_q["links"].items():
                             raw_bytes = download_pdf_bytes(link)
                             if raw_bytes:
@@ -265,9 +262,8 @@ if source_mode == "Auto-Fetch by Ticker":
                                 contents_payload.append(types.Part.from_bytes(data=raw_bytes, mime_type="application/pdf"))
                                 doc_summary_labels.append(f"{doc_type} ({past_q['quarter']})")
                             else:
-                                st.error(f"Blocked download for {doc_type} ({past_q['quarter']}). Use direct link above.")
+                                st.error(f"Blocked download for {doc_type} ({past_q['quarter']}).")
                         
-                        # Load Later Quarter
                         for doc_type, link in latest_q["links"].items():
                             raw_bytes = download_pdf_bytes(link)
                             if raw_bytes:
@@ -277,9 +273,9 @@ if source_mode == "Auto-Fetch by Ticker":
                                 contents_payload.append(types.Part.from_bytes(data=raw_bytes, mime_type="application/pdf"))
                                 doc_summary_labels.append(f"{doc_type} ({latest_q['quarter']})")
                             else:
-                                st.error(f"Blocked download for {doc_type} ({latest_q['quarter']}). Use direct link above.")
+                                st.error(f"Blocked download for {doc_type} ({latest_q['quarter']}).")
 
-# --- SOURCE MODE 2: MANUAL UPLOAD / URLS ---
+# --- SOURCE MODE 2: MANUAL UPLOAD ---
 else:
     if analysis_type == "Single Quarter Deep-Dive":
         uploaded_files = st.file_uploader(
@@ -326,13 +322,14 @@ if len(contents_payload) > 1 and doc_summary_labels:
         st.error("Please add `GEMINI_API_KEY` to your Streamlit Secrets or enter it in the sidebar.")
     else:
         with st.spinner(f"Reading & cross-examining {len(doc_summary_labels)} filing(s): {', '.join(doc_summary_labels)}..."):
+            # Explicitly initialize the client with the api_key variable
             client = genai.Client(api_key=api_key)
             
             if custom_focus.strip():
                 contents_payload.append(f"\nADDITIONAL SPECIFIC INVESTOR QUESTION TO ANSWER:\n{custom_focus}")
                 
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",  # Updated to stable gemini-2.0-flash model
                 contents=contents_payload,
                 config=types.GenerateContentConfig(temperature=0.1)
             )
